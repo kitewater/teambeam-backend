@@ -2,12 +2,11 @@ package passionmansour.teambeam.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.core.parameters.P;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import passionmansour.teambeam.model.dto.Tag.request.PostTagRequest;
-import passionmansour.teambeam.model.dto.Tag.response.TagListResponse;
-import passionmansour.teambeam.model.dto.Tag.response.TagResponse;
+import passionmansour.teambeam.model.dto.tag.request.PostTagRequest;
+import passionmansour.teambeam.model.dto.tag.response.TagListResponse;
+import passionmansour.teambeam.model.dto.tag.response.TagResponse;
 import passionmansour.teambeam.model.entity.*;
 import passionmansour.teambeam.model.enums.TagCategory;
 import passionmansour.teambeam.repository.*;
@@ -55,6 +54,11 @@ public class TagService {
     }
 
     @Transactional
+    public void deletePostTag(PostTag postTag){
+        postTagRepository.delete(postTag);
+    }
+
+    @Transactional
     public ScheduleTag addScheduleTag(Long tagId, Long scheduleId){
         ScheduleTag scheduleTag = ScheduleTag.builder()
                 .schedule(scheduleRepository.findById(scheduleId).get())
@@ -62,6 +66,11 @@ public class TagService {
                 .build();
 
         return scheduleTagRepository.save(scheduleTag);
+    }
+
+    @Transactional
+    public void deleteScheduleTag(ScheduleTag scheduleTag){
+        scheduleTagRepository.delete(scheduleTag);
     }
 
     @Transactional
@@ -75,18 +84,22 @@ public class TagService {
     }
 
     @Transactional
-    public void deleteTag(Long tagId) {
+    public void deleteTodoTag(TodoTag todoTag){
+        todoTagRepository.delete(todoTag);
+    }
 
+    @Transactional
+    public void deleteTag(Long tagId) {
+        Tag tag = getById(tagId);
+        tagRepository.delete(tag);
     }
 
     @Transactional(readOnly = true)
     public Tag getById(Long tagId){
-        Optional<Tag> tag = tagRepository.findById(tagId);
-        if(tag.isEmpty()){
-            // TODO: 예외처리
-        }
+        Tag tag = tagRepository.findById(tagId)
+                .orElseThrow(() -> new RuntimeException("Tag not found"));
 
-        return tag.get();
+        return tag;
     }
 
     @Transactional(readOnly = true)

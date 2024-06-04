@@ -4,16 +4,15 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import passionmansour.teambeam.model.dto.Memo.request.PatchMemoRequest;
-import passionmansour.teambeam.model.dto.Memo.request.PostMemoRequest;
-import passionmansour.teambeam.model.dto.Memo.response.MemoListResponse;
-import passionmansour.teambeam.model.dto.Memo.response.MemoResponse;
+import passionmansour.teambeam.model.dto.memo.request.PatchMemoRequest;
+import passionmansour.teambeam.model.dto.memo.request.PostMemoRequest;
+import passionmansour.teambeam.model.dto.memo.response.MemoListResponse;
+import passionmansour.teambeam.model.dto.memo.response.MemoResponse;
 import passionmansour.teambeam.model.entity.Memo;
 import passionmansour.teambeam.repository.MemoRepository;
 import passionmansour.teambeam.service.security.JwtTokenService;
 
 import java.time.LocalDateTime;
-import java.util.Optional;
 
 @Slf4j
 @Service
@@ -48,17 +47,16 @@ public class MemoService {
 
     @Transactional
     public void deleteMemo(Long memoId){
-
+        Memo memo = getById(memoId);
+        memoRepository.delete(memo);
     }
 
     @Transactional(readOnly = true)
     public Memo getById(Long memoId){
-        Optional<Memo> memo = memoRepository.findById(memoId);
-        if(memo.isEmpty()){
-            //TODO: 예외처리
-        }
+        Memo memo = memoRepository.findById(memoId)
+                .orElseThrow(() -> new RuntimeException("Memo not found"));
 
-        return memo.get();
+        return memo;
     }
 
     @Transactional(readOnly = true)

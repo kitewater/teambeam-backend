@@ -10,7 +10,6 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import passionmansour.teambeam.execption.member.InvalidTokenException;
 import passionmansour.teambeam.execption.member.TokenGenerationException;
 import passionmansour.teambeam.execption.member.UserAlreadyExistsException;
 import passionmansour.teambeam.model.dto.member.request.*;
@@ -51,38 +50,54 @@ public class MemberService {
         String encodedPassword = passwordEncoder.encode(registerRequest.getPassword());
         log.info("Encoded password: {}", encodedPassword);
 
-        Member member = new Member();
-        member.setMemberName(registerRequest.getMemberName());
-        member.setMail(registerRequest.getMail());
-        member.setPassword(encodedPassword);
-        member.setNotificationCount(member.getNotifications().size());
-        member.setStartPage(StartPage.PROJECT_SELECTION_PAGE);
+        Optional<Member> existingMember = memberRepository.findByMail(registerRequest.getMail());
 
-
-
-        if (memberRepository.findByMail(registerRequest.getMail()).isPresent()) {
-            throw new UserAlreadyExistsException("User with this mail already exists: " + registerRequest.getMail());
+        Member member;
+        if (existingMember.isPresent()) {
+            member = existingMember.get();
+            if (member.isDeleted()) {
+                // 논리 삭제된 계정을 재사용하여 업데이트
+                member.setDeleted(false);
+                member.setMemberName(registerRequest.getMemberName());
+                member.setPassword(encodedPassword);
+                member.setNotificationCount(0); // 초기화
+                member.setStartPage(StartPage.PROJECT_SELECTION_PAGE);
+            } else {
+                throw new UserAlreadyExistsException("User with this mail already exists: " + registerRequest.getMail());
+            }
+        } else {
+            member = new Member();
+            member.setMemberName(registerRequest.getMemberName());
+            member.setMail(registerRequest.getMail());
+            member.setPassword(encodedPassword);
+            member.setNotificationCount(0); // 초기화
+            member.setStartPage(StartPage.PROJECT_SELECTION_PAGE);
         }
 
+        // 멤버 저장
         Member savedMember = memberRepository.save(member);
-        log.info("member {}", savedMember);
+        log.info("Saved member {}", savedMember);
 
+        // 프로젝트 참가 처리
         if (registerRequest.getToken() != null) {
-            Long projectIdFromToken = tokenService.getProjectIdFromToken(registerRequest.getToken());
-            Project project = projectRepository.findByProjectId(projectIdFromToken).orElseThrow(() ->
-                new EntityNotFoundException("Project not found with projectId: " + projectIdFromToken));
-
-            JoinMember joinMember = new JoinMember();
-            joinMember.setProject(project);
-            joinMember.setMember(savedMember);
-            joinMember.setHost(false);
-
-            JoinMember saved = joinMemberRepository.save(joinMember);
-            log.info("JoinMember {}", saved);
+            joinProjectWithToken(registerRequest.getToken(), savedMember);
         }
 
         return convertToDto(savedMember);
+    }
 
+    private void joinProjectWithToken(String token, Member member) {
+        Long projectIdFromToken = tokenService.getProjectIdFromToken(token);
+        Project project = projectRepository.findByProjectId(projectIdFromToken).orElseThrow(() ->
+            new EntityNotFoundException("Project not found with projectId: " + projectIdFromToken));
+
+        JoinMember joinMember = new JoinMember();
+        joinMember.setProject(project);
+        joinMember.setMember(member);
+        joinMember.setHost(false);
+
+        JoinMember savedJoinMember = joinMemberRepository.save(joinMember);
+        log.info("JoinMember {}", savedJoinMember);
     }
 
     public MemberDto convertToDto(Member member) {
@@ -105,7 +120,7 @@ public class MemberService {
     @Transactional
     public String sendRegisterCode(String mail) {
 
-        Optional<Member> member = memberRepository.findByMail(mail);
+        Optional<Member> member = memberRepository.findByMailAndIsDeletedFalse(mail);
 
         if (member.isPresent()) {
             throw new UserAlreadyExistsException("User with this mail already exists: " + mail);
@@ -114,9 +129,7 @@ public class MemberService {
         String subject = "회원가입 메일 인증";
         String text = "회원가입 메일을 인증";
 
-        String code = sendCode(mail, null, subject, text);
-
-        return code;
+        return sendCode(mail, subject, text);
     }
 
     // 로그인
@@ -126,7 +139,7 @@ public class MemberService {
 
         try {
             // mail 로 사용자 정보 조회
-            Member member = memberRepository.findByMail(loginRequest.getMail())
+            Member member = memberRepository.findByMailAndIsDeletedFalse(loginRequest.getMail())
                 .orElseThrow(() -> new UsernameNotFoundException("User not found with mail: " + loginRequest.getMail()));
 
             log.info("Stored encoded password: {}", member.getPassword());
@@ -165,24 +178,25 @@ public class MemberService {
     @Transactional
     public String sendPasswordResetLink(UpdateMemberRequest request) {
 
-        Optional<Member> memberOptional = memberRepository.findByMail(request.getMail());
+        Optional<Member> memberOptional = memberRepository.findByMailAndIsDeletedFalse(request.getMail());
         log.info(memberOptional.toString());
 
         if (memberOptional.isPresent()) {
             String token = UUID.randomUUID().toString();
 
             // 인증 정보 저장
-            redisTokenService.storeResetToken(token);
+            redisTokenService.storeResetToken(token, request.getMail());
 
             log.info("token {}", token);
 
             // 재설정 링크 생성
-            String resetLink = "http://localhost:3000/reset-password?token=" + token;
+            String resetLink = "http://localhost:3000/user/settingPassword?token=" + token;
+            String emailBody = "<html><body><p>안녕하세요,</p><p>비밀번호를 재설정하려면 아래 링크를 클릭하세요:</p>" +
+                "<a href='" + resetLink + "'>비밀번호 재설정</a><p>링크는 30분 후에 만료됩니다.</p></body></html>";
+
             // 메일 전송
             try {
-                emailService.sendEmail(request.getMail(), "비밀번호 재설정",
-                    "안녕하세요,\n\n비밀번호를 재설정하려면 아래 링크를 클릭하세요:\n\n" + resetLink
-                        + "\n\n링크는 30분 후에 만료됩니다.\n\n" + "\n\n김시합니다.");
+                emailService.sendHtmlEmail(request.getMail(), "비밀번호 재설정", emailBody);
                 return resetLink;
             } catch (MailAuthenticationException e) {
                 log.error("Mail authentication failed: {}", e.getMessage());
@@ -199,16 +213,22 @@ public class MemberService {
     @Transactional
     public boolean resetPassword(String token, String newPassword) {
 
-        if (redisTokenService.isTrue(token)) {
-            Member member = tokenService.getMemberByToken(token);
-            member.setPassword(passwordEncoder.encode(newPassword));
-            redisTokenService.deleteResetToken(token);
+        String mail = null;
 
-            return true;
-        }
-        else {
-            throw new InvalidTokenException("Token has expired");
-        }
+        mail = redisTokenService.getMailByResetToken(token);
+        log.info("mail {}", mail);
+
+        String finalMail = mail;
+        Member member = memberRepository.findByMailAndIsDeletedFalse(mail)
+            .orElseThrow(() -> new UsernameNotFoundException("User not found with mail: " + finalMail));
+        log.info("member {}", member);
+
+        member.setPassword(passwordEncoder.encode(newPassword));
+        redisTokenService.deleteResetToken(token);
+
+        log.info("savedMember {}", member);
+
+        return true;
     }
 
     public MemberDto getMember(String token) {
@@ -284,7 +304,7 @@ public class MemberService {
     // 메일 수정 코드 요청
     @Transactional
     public String sendUpdateMailCode(String token, String mail) {
-        Optional<Member> optionalMember = memberRepository.findByMail(mail);
+        Optional<Member> optionalMember = memberRepository.findByMailAndIsDeletedFalse(mail);
 
         if (optionalMember.isPresent()) {
             throw new UserAlreadyExistsException("Mail already exists");
@@ -295,12 +315,10 @@ public class MemberService {
         String subject = "메일 주소 변경";
         String text = "메일 주소를 변경";
 
-        String code = sendCode(mail, member, subject, text);
-
-        return code;
+        return sendCode(mail, subject, text);
     }
 
-    private String sendCode(String mail, Member member, String subject, String text) {
+    private String sendCode(String mail, String subject, String text) {
         // 100000 (최소값) 부터 999999 (최대값) 사이의 숫자 생성
         String code = String.valueOf(ThreadLocalRandom.current().nextInt(100000, 1000000));
 

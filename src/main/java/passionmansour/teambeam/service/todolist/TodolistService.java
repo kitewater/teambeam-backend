@@ -10,8 +10,10 @@ import passionmansour.teambeam.model.dto.todolist.dto.TopTodoDTO;
 import passionmansour.teambeam.model.dto.todolist.request.*;
 import passionmansour.teambeam.model.entity.*;
 import passionmansour.teambeam.repository.*;
+import passionmansour.teambeam.service.ProjectService;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -36,6 +38,15 @@ public class TodolistService {
 
     @Autowired
     private ConvertTodoService convertTodoService;
+
+    @Autowired
+    private TagRepository tagRepository;
+
+    @Autowired
+    private JoinMemberRepository joinMemberRepository;
+
+    @Autowired
+    private TodoTagRepository todoTagRepository;
 
     private ModelMapper modelMapper;
 
@@ -107,6 +118,8 @@ public class TodolistService {
             throw new RuntimeException("Project 찾지 못했습니다.");
         }
 
+
+
         MiddleTodo middleTodo = new MiddleTodo();
         middleTodo.setMiddleTodoTitle(request.getTitle());
         middleTodo.setProject(projectOptional.get());
@@ -133,6 +146,8 @@ public class TodolistService {
         }
 
 
+
+
         BottomTodo bottomTodo = new BottomTodo();
         bottomTodo.setBottomTodoTitle(request.getTitle());
         bottomTodo.setProject(projectOptional.get());
@@ -140,7 +155,24 @@ public class TodolistService {
         bottomTodo.setStartDate(request.getStartDate());
         bottomTodo.setEndDate(request.getEndDate());
         bottomTodo.setMember(memberOptional.get());
-        return convertTodoService.convertToDto(bottomTodoRepository.save(bottomTodo),
+
+        BottomTodo savedBottomTodo = bottomTodoRepository.save(bottomTodo);
+
+        List<TodoTag> todoTags = new ArrayList<>();
+        for (Integer tagId : request.getTaglist()) {
+            Optional<Tag> tagOptional = tagRepository.findById(tagId.longValue());
+            if (!tagOptional.isPresent()) {
+                throw new RuntimeException("Tag 찾지 못했습니다.");
+            }
+            TodoTag todoTag = new TodoTag();
+            todoTag.setTodo(savedBottomTodo);
+            todoTag.setTag(tagOptional.get());
+            todoTags.add(todoTag);
+        }
+        todoTagRepository.saveAll(todoTags);
+        savedBottomTodo.setTodoTags(todoTags);
+
+        return convertTodoService.convertToDto(savedBottomTodo,
                 middleTodoOptional.get().getTopTodo().getTopTodoId(),
                 middleTodoOptional.get().getMiddleTodoId());
     }
@@ -252,13 +284,6 @@ public class TodolistService {
         sampleBottomTodo.setMiddleTodo(sampleMiddleTodo);
         sampleBottomTodo.setStartDate(java.sql.Date.valueOf(LocalDate.now()));
         sampleBottomTodo.setEndDate(java.sql.Date.valueOf(LocalDate.now().plusDays(2)));
-        // Assuming there is a member to assign, for now, let's fetch the first one
-        Optional<Member> memberOptional = memberRepository.findAll().stream().findFirst();
-        if (memberOptional.isPresent()) {
-            sampleBottomTodo.setMember(memberOptional.get());
-        } else {
-            throw new RuntimeException("No members found to assign to sample BottomTodo.");
-        }
         bottomTodoRepository.save(sampleBottomTodo);
 
     }

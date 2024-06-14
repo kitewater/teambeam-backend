@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import passionmansour.teambeam.model.dto.notification.CreateNotificationRequest;
 import passionmansour.teambeam.model.dto.notification.NotificationDto;
 import passionmansour.teambeam.model.dto.notification.NotificationListResponse;
-import passionmansour.teambeam.service.NotificationService;
+import passionmansour.teambeam.service.notification.NotificationService;
 
 import java.util.HashMap;
 import java.util.List;
@@ -40,7 +40,7 @@ public class NotificationController {
 
     @GetMapping("/notification")
     public ResponseEntity<NotificationListResponse> getNotificationList(@RequestHeader("Authorization") String token) {
-        List<NotificationDto> list = notificationService.getList(token);
+        List<NotificationDto> list = notificationService.getNotificationsForMember(token);
 
         NotificationListResponse response = new NotificationListResponse();
         response.setMessage("Successfully retrieved list");
